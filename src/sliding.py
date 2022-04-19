@@ -7,6 +7,7 @@ from sensor_msgs.msg import Imu
 from mavros_msgs.msg import *
 from mavros_msgs.srv import *
 
+
 class Controller:
     def __init__(self):
         self.pos_z = 0.0
@@ -44,12 +45,33 @@ def main():
     armed_once = False
     offb = False
 
+    Ts = 1/50
+    B = [0 Ts 0] #column vector or numpy
+    F = [1 Ts 0; 0 1 -Ts; 0 0 1] # numpy??
+    Q = identity 3x3 # numpy
+
+    R = [1000] #numpy vector
+    H = [1 0 0] #line vector or numpy
+
+
+    myEKF = KalmanFilter(dim_x=3, dim_z=1)
+
     while not rospy.is_shutdown():
+
+        ## EKF
+
+        myEKF.predict(acc_setpoint, B, F, Q)
+        myEKF.update(myc.pos_z, R, H)
+        
+        ##
 
         ## Acceleration setpoint calculation using Sliding Mode
         sz = myc.vel_z + lambda_param * (myc.pos_z - pos_z_des)
         val = tanh(sz/0.1).real
-        acc_setpoint = -k_param * val  - lambda_param * myc.vel_z
+        acc_setpoint = -k_param * val  - lambda_param * myEKF.x(1) #assuming from zero
+
+        #The third one is accelearation of the elevator
+
         ## End
 
         if (rospy.get_rostime().secs - start.secs) > 45:
