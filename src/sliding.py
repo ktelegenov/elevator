@@ -7,6 +7,8 @@ from sensor_msgs.msg import Imu
 from mavros_msgs.msg import *
 from mavros_msgs.srv import *
 
+import numpy as np
+from kalmanfilter import KalmanFilter
 
 class Controller:
     def __init__(self):
@@ -39,36 +41,41 @@ def main():
     lambda_param = 5
     k_param = 2
     pos_z_des = 0.85
+    u = 0.0
     ## End
 
     start = rospy.get_rostime()
     armed_once = False
     offb = False
 
-    Ts = 1/50
-    B = [0 Ts 0] #column vector or numpy
-    F = [1 Ts 0; 0 1 -Ts; 0 0 1] # numpy??
-    Q = identity 3x3 # numpy
+    Ts = 1/50 # sampling time    
 
-    R = [1000] #numpy vector
-    H = [1 0 0] #line vector or numpy
+    myEKF = KalmanFilter(dim_x=3, dim_z=1, dim_u=1)
+    myEKF.F = np.array([[1., Ts, 0.],
+                        [0., 1., -Ts],
+                        [0., 0., 1.]])
 
-
-    myEKF = KalmanFilter(dim_x=3, dim_z=1)
+    myEKF.H = np.array([[1., 0., 0.]])
+    myEKF.R = 1000
+    myEKF.P = 1000
+    myEKF.B = np.array([[0.,Ts, 0.]]).T
+    myEKF.u = np.array([u])
+    
 
     while not rospy.is_shutdown():
 
         ## EKF
 
-        myEKF.predict(acc_setpoint, B, F, Q)
-        myEKF.update(myc.pos_z, R, H)
+        myEKF.predict()
+        myEKF.update(myc.pos_z)
         
         ##
 
         ## Acceleration setpoint calculation using Sliding Mode
         sz = myc.vel_z + lambda_param * (myc.pos_z - pos_z_des)
         val = tanh(sz/0.1).real
-        acc_setpoint = -k_param * val  - lambda_param * myEKF.x(1) #assuming from zero
+        u = -k_param * val  - lambda_param * myEKF.x[1] # accessing numpy array as array[0]
+        myEKF.u = np.array([u])
 
         #The third one is accelearation of the elevator
 
@@ -79,11 +86,7 @@ def main():
             setpoint.coordinate_frame = 1
             setpoint.position.x = 0.0
             setpoint.position.y = 0.0
-            # setpoint.acceleration_or_force.x = 0.0
-            # setpoint.acceleration_or_force.y = 0.0
-            setpoint.acceleration_or_force.z = acc_setpoint
-            # print("switched to acc")
-            # print(acc_setpoint)
+            setpoint.acceleration_or_force.z = u
         else:
             setpoint.type_mask = PositionTarget.IGNORE_YAW_RATE + PositionTarget.IGNORE_AFZ + PositionTarget.IGNORE_VX + PositionTarget.IGNORE_VY + PositionTarget.IGNORE_VZ + PositionTarget.IGNORE_AFX + PositionTarget.IGNORE_AFY + PositionTarget.IGNORE_YAW_RATE + PositionTarget.IGNORE_YAW
             setpoint.coordinate_frame = 1
@@ -93,6 +96,8 @@ def main():
 
 
         pub.publish(setpoint)
+
+        # var.publish(myEFK.x)
         rate.sleep()
 
         if (rospy.get_rostime().secs - start.secs)  > 10.0 and not armed_once:
