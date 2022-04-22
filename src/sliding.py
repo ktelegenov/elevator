@@ -7,6 +7,8 @@ from sensor_msgs.msg import Imu
 from mavros_msgs.msg import *
 from mavros_msgs.srv import *
 
+from std_msgs.msg import Float64
+
 import numpy as np
 from kalmanfilter import KalmanFilter
 
@@ -32,7 +34,11 @@ def main():
 
     setpoint = PositionTarget()
 
-    pub  = rospy.Publisher('mavros/setpoint_raw/local', PositionTarget, queue_size=1)    
+    pub  = rospy.Publisher('mavros/setpoint_raw/local', PositionTarget, queue_size=1)
+    u_pub = rospy.Publisher('mydata/u_input', Float64, queue_size = 1)
+    x_1 = rospy.Publisher('mydata/x1', Float64, queue_size = 1)
+    x_2 = rospy.Publisher('mydata/x2', Float64, queue_size = 1)
+    x_3 = rospy.Publisher('mydata/x3', Float64, queue_size = 1)
 
     local_pos = rospy.Subscriber('mavros/local_position/pose', PoseStamped, myc.local_pos_callback)
     local_vel = rospy.Subscriber('mavros/local_position/velocity_body', TwistStamped, myc.local_vel_callback)
@@ -40,44 +46,44 @@ def main():
     ## Parameters
     lambda_param = 5
     k_param = 2
-    pos_z_des = 0.85
-    u = 2.0
+    pos_z_des = 0.6
+    # u = 2.0
     ## End
 
     start = rospy.get_rostime()
     armed_once = False
     offb = False
 
-    Ts = 1/50 # sampling time    
-
     myEKF = KalmanFilter(dim_x=3, dim_z=1, dim_u=1)
-    myEKF.F = np.array([[1., Ts, 0.],
-                        [0., 1., -Ts],
+    myEKF.F = np.array([[1., 0.02, 0.],
+                        [0., 1., -0.02],
                         [0., 0., 1.]])
+    myEKF.x = np.array([0.5, 0, 0])
 
-    myEKF.H = np.array([[1., 0., 0.]])
-    myEKF.R = 1000
-    myEKF.P = 1
-    myEKF.B = np.array([[0.,Ts, 0.]]).T
-    myEKF.u = np.array([u])
+    # myEKF.H = np.array([[1., 0., 0.]])
+    # myEKF.R = 4
+    myEKF.P = 1000
+    myEKF.B = np.array([[0., 0.02, 0.]]).T
+    myEKF.u = np.array([2.0])
     
 
     while not rospy.is_shutdown():
 
         ## EKF
-
+        # print("x before predict = ", myEKF.x)
         myEKF.predict()
+
         myEKF.update(myc.pos_z)
+        # print("pose z = ", myc.pos_z)
         
         ##
 
         ## Acceleration setpoint calculation using Sliding Mode
         sz = myc.vel_z + lambda_param * (myc.pos_z - pos_z_des)
         val = tanh(sz/0.1).real
-        u = -k_param * val  - lambda_param * myEKF.x[1] # accessing numpy array as array[0]
+        u = -k_param * val  - lambda_param * myEKF.x[1] # myEKF.x[1] = velocity
+        
         myEKF.u = np.array([u])
-
-        #The third one is accelearation of the elevator
 
         ## End
 
@@ -96,6 +102,10 @@ def main():
 
 
         pub.publish(setpoint)
+        u_pub.publish(u)
+        x_1.publish(myEKF.x[0])
+        x_2.publish(myEKF.x[1])
+        x_3.publish(myEKF.x[2])
 
         # var.publish(myEFK.x)
         rate.sleep()
