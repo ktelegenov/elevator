@@ -41,7 +41,7 @@ def main():
     lambda_param = 5
     k_param = 2
     pos_z_des = 0.85
-    u = 0.0
+    u = 2.0
     ## End
 
     start = rospy.get_rostime()
@@ -57,7 +57,7 @@ def main():
 
     myEKF.H = np.array([[1., 0., 0.]])
     myEKF.R = 1000
-    myEKF.P = 1000
+    myEKF.P = 1
     myEKF.B = np.array([[0.,Ts, 0.]]).T
     myEKF.u = np.array([u])
     
